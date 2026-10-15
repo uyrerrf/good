@@ -1,10 +1,8 @@
 # ──────────────────────────────────────────────────────────────────────────────
-# Lab-RATS · Build APK  —  ZERO-SECRET · SELF-DIAGNOSING EDITION
+# Lab-RATS · Build APK  —  ZERO-SECRET · SELF-DIAGNOSING · FULLY FIXED
 #
 # NO SECRETS. NO KEYSTORE. NO GUESSING.
-#
-# Every step validates its output. Every failure dumps context.
-# If the build breaks, you see exactly where and why.
+# Every step validates output. Every failure dumps context.
 # ──────────────────────────────────────────────────────────────────────────────
 
 name: "Lab-RATS · Build APK"
@@ -317,7 +315,7 @@ jobs:
         run: |
           set -e
           python3 - << 'PYEOF'
-          import re, html, sys
+          import re, html, sys, os
 
           raw  = """${{ inputs.app_name }}"""
           safe = html.escape(raw, quote=False)
@@ -471,4 +469,3 @@ jobs:
           rm -f build_output.txt
           rm -f app/build.gradle.bak
           echo "Cleanup done"
-          
